@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Soja vs Dólar — Decisión mensual</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0c0e14; color: #d4dae8; font-family: system-ui, -apple-system, sans-serif; }
+    input[type=range] { width: 100%; accent-color: #3b5bdb; cursor: pointer; }
+    input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; }
+    select option { background: #141722; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: #0c0e14; }
+    ::-webkit-scrollbar-thumb { background: #1e2130; border-radius: 2px; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const { useState, createElement: h } = React;
+
+const FMT = (n) => Number(n).toLocaleString("es-AR", { maximumFractionDigits: 0 });
+const PCT = (v) => (v >= 0 ? "+" : "") + (v * 100).toFixed(1) + "%";
+
+const DEFAULTS = {
+  soja_hoy: 465000, dolar_hoy: 1478,
+  soja_prom: 440000, dolar_prom: 1430,
+  stock_d: 3, stock_s: 3, urgencia: 3, expect_s: 3,
+  tn_soja: 50, usd_dolar: 10000,
+};
+
+const TABS = ["📊 Decisión", "⚙️ Mi situación", "📅 Historial"];
+const COLORS = { green: "#22c55e", red: "#ef4444", yellow: "#eab308", blue: "#7a9fff", gray: "#4a5568" };
+
+function calcScore(v) {
+  const { soja_hoy, dolar_hoy, soja_prom, dolar_prom, stock_d, stock_s, urgencia, expect_s } = v;
+  if (!soja_hoy || !dolar_hoy || !soja_prom || !dolar_prom) return { score: 0, soja_rel: 0, dolar_rel: 0, razones: [] };
+
+  const soja_rel  = (soja_hoy  - soja_prom)  / soja_prom;
+  const dolar_rel = (dolar_hoy - dolar_prom) / dolar_prom;
+  let score = 0;
+  const razones = [];
+
+  score += soja_rel * 3.5;
+  if (soja_rel > 0.02)  razones.push({ e: "✅", t: `Soja ${PCT(soja_rel)} sobre su promedio`, c: "green", d: "→ buen momento para liquidar" });
+  else if (soja_rel < -0.02) razones.push({ e: "⚠️", t: `Soja ${PCT(soja_rel)} bajo su promedio`, c: "red", d: "→ conviene guardarla" });
+
+  score -= dolar_rel * 2.5;
+  if (dolar_rel > 0.02)  razones.push({ e: "💵", t: `Dólar ${PCT(dolar_rel)} sobre su promedio`, c: "green", d: "→ buen momento para vender dólares" });
+  else if (dolar_rel < -0.02) razones.push({ e: "💵", t: `Dólar ${PCT(dolar_rel)} bajo su promedio`, c: "red", d: "→ guardá los dólares" });
+
+  score -= (stock_d - 3) * 0.35;
+  if (stock_d >= 4) razones.push({ e: "💼", t: "Buen stock de dólares", c: "blue", d: "→ podés vender sin quedar descubierto" });
+  if (stock_d <= 2) razones.push({ e: "⚠️", t: "Poco stock de dólares", c: "yellow", d: "→ cuidado con vender muchos" });
+
+  score += (stock_s - 3) * 0.25;
+  if (stock_s >= 4) razones.push({ e: "🌾", t: "Mucha soja en stock", c: "green", d: "→ podés vender sin apuro" });
+
+  score -= (expect_s - 3) * 0.6;
+  if (expect_s >= 4) razones.push({ e: "📈", t: "Esperás que suba la soja", c: "blue", d: "→ guardala y vendé dólares ahora" });
+  if (expect_s <= 2) razones.push({ e: "📉", t: "Esperás que baje la soja", c: "yellow", d: "→ mejor vender ahora que después" });
+
+  if (urgencia >= 4) razones.push({ e: "⏰", t: "Alta urgencia de pesos", c: "gray", d: "→ actuá rápido con lo que esté mejor" });
+
+  return { score, soja_rel, dolar_rel, razones };
+}
+
+function Slider({ label, value, onChange, hint }) {
+  return h("div", { style: { background:"#141722", border:"1px solid #1e2130", borderRadius:9, padding:"10px 12px" } },
+    h("div", { style: { display:"flex", justifyContent:"space-between", fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.08em", color:"#3a4460", marginBottom:8 } },
+      h("span", null, label),
+      h("span", { style: { color:"#7a9fff" } }, value)
+    ),
+    h("input", { type:"range", min:1, max:5, value, onChange: e => onChange(Number(e.target.value)) }),
+    h("div", { style: { fontSize:10, color:"#2e3650", marginTop:4 } }, hint)
+  );
+}
+
+function NumInput({ label, value, onChange, unit, step }) {
+  step = step || 1000;
+  return h("div", { style: { background:"#141722", border:"1px solid #1e2130", borderRadius:9, padding:"10px 12px" } },
+    h("div", { style: { fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.08em", color:"#3a4460", marginBottom:5 } }, label),
+    h("input", { type:"number", value, step, onChange: e => onChange(Number(e.target.value)),
+      style: { width:"100%", background:"transparent", border:"none", outline:"none", color:"#e8edf5", fontSize:17, fontWeight:700, fontFamily:"inherit" } }),
+    h("div", { style: { fontSize:10, color:"#2e3650", marginTop:2 } }, unit)
+  );
+}
+
+function App() {
+  const [tab, setTab] = useState(0);
+  const [v, setV] = useState(DEFAULTS);
+  const [hist, setHist] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("soja_hist_v3") || "[]"); } catch { return []; }
+  });
+  const [hForm, setHForm] = useState({ mes:"", soja:"", dolar:"", decision:"soja" });
+
+  const set = (k) => (val) => setV(prev => ({ ...prev, [k]: val }));
+
+  const saveHist = (arr) => {
+    setHist(arr);
+    try { localStorage.setItem("soja_hist_v3", JSON.stringify(arr)); } catch {}
+  };
+
+  const { score, soja_rel, dolar_rel, razones } = calcScore(v);
+  const abs = Math.abs(score);
+  const claro = abs > 1.2;
+
+  let verdict = { emoji:"⚖️", title:"Situación neutral", sub:"Los precios están cerca de los promedios. Mirá tu contexto puntual.", cls:"neutro" };
+  if (score > 0.3)  verdict = { emoji:"🌾", title: claro ? "¡VENDÉ SOJA!"     : "Leve ventaja: vender soja",    sub: claro ? "La soja está por encima de su promedio reciente. Buen momento para liquidar."              : "Pequeña ventaja de vender soja. Revisá tu stock.", cls:"soja" };
+  if (score < -0.3) verdict = { emoji:"💵", title: claro ? "¡VENDÉ DÓLARES!"  : "Leve ventaja: vender dólares", sub: claro ? "El dólar está caro y/o la soja barata vs promedio. Guardá la soja y liquidá dólares." : "Pequeña ventaja de vender dólares. Revisá tu stock.", cls:"dolares" };
+
+  const vc = { soja:{ bg:"#0b1f11", border:"#22c55e", title:"#22c55e" }, dolares:{ bg:"#1a1600", border:"#eab308", title:"#eab308" }, neutro:{ bg:"#0e1225", border:"#3b5bdb", title:"#7a9fff" } }[verdict.cls];
+  const pct = Math.max(5, Math.min(95, 50 + score * 18));
+  const sojaPs  = v.tn_soja   * v.soja_hoy;
+  const dolarPs = v.usd_dolar * v.dolar_hoy;
+
+  const S = {
+    page:     { background:"#0c0e14", minHeight:"100vh", padding:"18px 14px 40px", color:"#d4dae8" },
+    secLabel: { fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.1em", color:"#2e3650", marginBottom:8, marginTop:14 },
+    grid2:    { display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 },
+    card:     { background:"#141722", border:"1px solid #1e2130", borderRadius:9, padding:"10px 12px" },
+  };
+
+  // TAB 0: Decisión
+  const tabDecision = h("div", null,
+    h("div", { style: S.secLabel }, "Precios de hoy"),
+    h("div", { style: S.grid2 },
+      h(NumInput, { label:"🌾 Soja BCR Rosario", value:v.soja_hoy,   onChange:set("soja_hoy"),   unit:"$/tn · precio pizarra",   step:1000 }),
+      h(NumInput, { label:"💵 Dólar MEP",         value:v.dolar_hoy,  onChange:set("dolar_hoy"),  unit:"$/USD  (CCL ~$1.520)",    step:10   })
+    ),
+    h("div", { style: S.secLabel }, "Promedios de referencia (últimos 3 meses)"),
+    h("div", { style: S.grid2 },
+      h(NumInput, { label:"Soja promedio",  value:v.soja_prom,  onChange:set("soja_prom"),  unit:"$/tn",  step:1000 }),
+      h(NumInput, { label:"Dólar promedio", value:v.dolar_prom, onChange:set("dolar_prom"), unit:"$/USD", step:10   })
+    ),
+    // Verdict card
+    h("div", { style: { background:vc.bg, border:`1.5px solid ${vc.border}`, borderRadius:12, padding:"18px 16px", margin:"14px 0", textAlign:"center" } },
+      h("div", { style: { fontSize:36, marginBottom:6 } }, verdict.emoji),
+      h("div", { style: { fontSize:22, fontWeight:900, color:vc.title, letterSpacing:"-0.02em", marginBottom:4 } }, verdict.title),
+      h("div", { style: { fontSize:12, color:"#5a6888", lineHeight:1.45 } }, verdict.sub)
+    ),
+    // Metrics
+    h("div", { style: { display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8, marginBottom:10 } },
+      ...[
+        { val:PCT(soja_rel),  lbl:"Soja vs prom.",  col: soja_rel  >= 0 ? "#22c55e" : "#ef4444" },
+        { val:PCT(dolar_rel), lbl:"Dólar vs prom.", col: dolar_rel >= 0 ? "#22c55e" : "#ef4444" },
+        { val:(score>0?"+":"")+score.toFixed(2), lbl:"Score", col: score>0.3?"#22c55e":score<-0.3?"#eab308":"#7a9fff" },
+      ].map((m,i) =>
+        h("div", { key:i, style: { ...S.card, textAlign:"center" } },
+          h("div", { style: { fontSize:16, fontWeight:800, color:m.col, marginBottom:2 } }, m.val),
+          h("div", { style: { fontSize:9, textTransform:"uppercase", letterSpacing:"0.07em", color:"#2e3650" } }, m.lbl)
+        )
+      )
+    ),
+    // Gauge
+    h("div", { style: { ...S.card, marginBottom:10 } },
+      h("div", { style: { display:"flex", justifyContent:"space-between", fontSize:11, marginBottom:8 } },
+        h("span", { style: { color:"#22c55e" } }, "🌾 Vender soja"),
+        h("span", { style: { color:"#2e3650", fontSize:10 } }, "presión de la decisión"),
+        h("span", { style: { color:"#eab308" } }, "💵 Vender dólares")
+      ),
+      h("div", { style: { height:10, background:"#0c0e14", borderRadius:5, position:"relative", overflow:"hidden" } },
+        h("div", { style: { position:"absolute", left:0, top:0, height:"100%", width:pct+"%", background:"#22c55e", transition:"width 0.4s" } }),
+        h("div", { style: { position:"absolute", right:0, top:0, height:"100%", width:(100-pct)+"%", background:"#eab308", transition:"width 0.4s" } })
+      )
+    ),
+    // Razones
+    h("div", { style: { ...S.card, marginBottom:14 } },
+      h("div", { style: { fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.08em", color:"#3a4460", marginBottom:8 } }, "📌 Por qué esta recomendación"),
+      razones.length === 0
+        ? h("div", { style: { fontSize:12, color:"#2e3650" } }, "Precios dentro del rango normal, sin señal clara.")
+        : razones.map((r,i) =>
+            h("div", { key:i, style: { fontSize:12, color:"#6a7898", lineHeight:1.6, padding:"4px 0", borderBottom: i<razones.length-1?"1px solid #1a1e2e":"none" } },
+              r.e + " ",
+              h("span", { style: { color:COLORS[r.c]||"#7a9fff", fontWeight:600 } }, r.t),
+              " ",
+              h("span", { style: { color:"#4a5568" } }, r.d)
+            )
+          )
+    ),
+    h("div", { style: { fontSize:10, color:"#2a3050", textAlign:"center", lineHeight:1.7 } },
+      "Soja: ",
+      h("a", { href:"https://www.cac.bcr.com.ar/es/precios-de-pizarra", target:"_blank", style:{ color:"#3b5bdb" } }, "Cámara Arbitral BCR"),
+      " · Dólar: ",
+      h("a", { href:"https://www.ambito.com/contenidos/dolar-mep.html", target:"_blank", style:{ color:"#3b5bdb" } }, "Ámbito MEP")
+    )
+  );
+
+  // TAB 1: Mi situación
+  const tabSituacion = h("div", null,
+    h("div", { style: S.secLabel }, "Mi stock disponible"),
+    h("div", { style: S.grid2 },
+      h(Slider, { label:"Stock de dólares", value:v.stock_d, onChange:set("stock_d"), hint:"1 = pocos · 5 = tengo de sobra" }),
+      h(Slider, { label:"Stock de soja",    value:v.stock_s, onChange:set("stock_s"), hint:"1 = poca  · 5 = tengo mucha"    })
+    ),
+    h("div", { style: S.secLabel }, "Mi contexto"),
+    h("div", { style: S.grid2 },
+      h(Slider, { label:"Urgencia de pesos", value:v.urgencia, onChange:set("urgencia"), hint:"1 = tengo tiempo · 5 = ya necesito" }),
+      h(Slider, { label:"Expectativa soja",  value:v.expect_s, onChange:set("expect_s"), hint:"1 = va a bajar   · 5 = va a subir"  })
+    ),
+    h("div", { style: S.secLabel }, "Cuánto necesito liquidar"),
+    h("div", { style: S.grid2 },
+      h(NumInput, { label:"Tn de soja a vender", value:v.tn_soja,   onChange:set("tn_soja"),   unit:"toneladas", step:10  }),
+      h(NumInput, { label:"USD a vender",         value:v.usd_dolar, onChange:set("usd_dolar"), unit:"dólares",   step:500 })
+    ),
+    h("div", { style: { ...S.card, marginTop:10 } },
+      h("div", { style: { fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.08em", color:"#3a4460", marginBottom:10 } }, "💰 Equivalencia en pesos"),
+      h("div", { style: S.grid2 },
+        h("div", null,
+          h("div", { style: { fontSize:10, color:"#3a4460", marginBottom:3 } }, "🌾 Si vendés soja"),
+          h("div", { style: { fontSize:20, fontWeight:800, color:"#22c55e" } }, "$" + FMT(sojaPs)),
+          h("div", { style: { fontSize:10, color:"#2e3650" } }, v.tn_soja + " tn × $" + FMT(v.soja_hoy) + "/tn")
+        ),
+        h("div", null,
+          h("div", { style: { fontSize:10, color:"#3a4460", marginBottom:3 } }, "💵 Si vendés dólares"),
+          h("div", { style: { fontSize:20, fontWeight:800, color:"#eab308" } }, "$" + FMT(dolarPs)),
+          h("div", { style: { fontSize:10, color:"#2e3650" } }, FMT(v.usd_dolar) + " USD × $" + FMT(v.dolar_hoy))
+        )
+      ),
+      h("div", { style: { marginTop:12, paddingTop:10, borderTop:"1px solid #1e2130", fontSize:11, color:"#4a5568" } },
+        "Diferencia: ",
+        h("span", { style: { color: sojaPs>dolarPs ? "#22c55e" : "#eab308", fontWeight:700 } }, "$" + FMT(Math.abs(sojaPs-dolarPs))),
+        " más a favor de " + (sojaPs>dolarPs ? "vender soja" : "vender dólares")
+      )
+    )
+  );
+
+  // TAB 2: Historial
+  const decisionColors = {
+    soja:    { bg:"#0b1f11", col:"#22c55e", brd:"#22c55e", lbl:"🌾 Soja" },
+    dolares: { bg:"#1a1600", col:"#eab308", brd:"#eab308", lbl:"💵 Dólares" },
+    mixto:   { bg:"#0e1225", col:"#7a9fff", brd:"#3b5bdb", lbl:"⚖️ Mixto" },
+  };
+
+  const tabHistorial = h("div", null,
+    h("div", { style: S.secLabel }, "Registrar mes"),
+    h("div", { style: { ...S.grid2, marginBottom:8 } },
+      ...[
+        { lbl:"Mes", key:"mes", type:"text", placeholder:"Jun 2026" },
+        { lbl:"Soja $/tn", key:"soja", type:"number" },
+        { lbl:"Dólar $/USD", key:"dolar", type:"number" },
+      ].map(f =>
+        h("div", { key:f.key, style: S.card },
+          h("div", { style: { fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.08em", color:"#3a4460", marginBottom:5 } }, f.lbl),
+          h("input", { type:f.type||"text", value:hForm[f.key], placeholder:f.placeholder||"",
+            onChange: e => setHForm(p => ({ ...p, [f.key]: e.target.value })),
+            style: { width:"100%", background:"transparent", border:"none", outline:"none", color:"#e8edf5", fontSize:15, fontWeight:600, fontFamily:"inherit" } })
+        )
+      ),
+      h("div", { style: S.card },
+        h("div", { style: { fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.08em", color:"#3a4460", marginBottom:5 } }, "Decisión tomada"),
+        h("select", { value:hForm.decision, onChange: e => setHForm(p => ({ ...p, decision: e.target.value })),
+          style: { background:"transparent", border:"none", outline:"none", color:"#e8edf5", fontSize:13, fontWeight:600, fontFamily:"inherit", width:"100%", cursor:"pointer" } },
+          h("option", { value:"soja" }, "🌾 Soja"),
+          h("option", { value:"dolares" }, "💵 Dólares"),
+          h("option", { value:"mixto" }, "⚖️ Mixto")
+        )
+      )
+    ),
+    h("button", {
+      onClick: () => {
+        if (!hForm.mes || !hForm.soja || !hForm.dolar) return;
+        saveHist([...hist, { ...hForm, fecha: Date.now() }]);
+        setHForm({ mes:"", soja:"", dolar:"", decision:"soja" });
+      },
+      style: { width:"100%", padding:10, background:"#3b5bdb", border:"none", borderRadius:9, color:"white", fontSize:13, fontWeight:700, cursor:"pointer", marginBottom:14 }
+    }, "+ Agregar al historial"),
+    hist.length === 0
+      ? h("div", { style: { textAlign:"center", color:"#2e3650", fontSize:12, padding:"28px 16px", border:"1px dashed #1e2130", borderRadius:9 } },
+          "Todavía no registraste ningún mes.", h("br"), "Usá el formulario de arriba para llevar el registro."
+        )
+      : h("div", { style: { overflowX:"auto" } },
+          h("table", { style: { width:"100%", borderCollapse:"collapse", fontSize:12 } },
+            h("thead", null,
+              h("tr", null,
+                ...["Mes","Soja","Dólar","Decisión",""].map((lbl,i) =>
+                  h("th", { key:i, style: { fontSize:9, textTransform:"uppercase", letterSpacing:"0.08em", color:"#2e3650", fontWeight:700, padding:"6px 8px", textAlign:"left", borderBottom:"1px solid #1e2130" } }, lbl)
+                )
+              )
+            ),
+            h("tbody", null,
+              ...[...hist].reverse().map((row, ri) => {
+                const realIdx = hist.length - 1 - ri;
+                const bc = decisionColors[row.decision] || decisionColors.mixto;
+                return h("tr", { key:ri },
+                  h("td", { style: { padding:"8px", color:"#8a9ab8", borderBottom:"1px solid #141722" } }, row.mes),
+                  h("td", { style: { padding:"8px", color:"#8a9ab8", borderBottom:"1px solid #141722" } }, "$" + FMT(row.soja)),
+                  h("td", { style: { padding:"8px", color:"#8a9ab8", borderBottom:"1px solid #141722" } }, "$" + FMT(row.dolar)),
+                  h("td", { style: { padding:"8px", borderBottom:"1px solid #141722" } },
+                    h("span", { style: { display:"inline-block", padding:"2px 7px", borderRadius:4, fontSize:10, fontWeight:700, background:bc.bg, color:bc.col, border:`1px solid ${bc.brd}` } }, bc.lbl)
+                  ),
+                  h("td", { style: { padding:"8px", borderBottom:"1px solid #141722" } },
+                    h("button", { onClick: () => saveHist(hist.filter((_,i) => i !== realIdx)),
+                      style: { background:"none", border:"none", color:"#2e3650", cursor:"pointer", fontSize:14 } }, "✕")
+                  )
+                );
+              })
+            )
+          )
+        )
+  );
+
+  return h("div", { style: S.page },
+    // Header
+    h("div", { style: { display:"flex", alignItems:"center", gap:10, marginBottom:18 } },
+      h("span", { style: { fontSize:28 } }, "🌾"),
+      h("div", null,
+        h("div", { style: { fontSize:15, fontWeight:800, color:"#e8edf5", letterSpacing:"-0.01em" } }, "SOJA vs DÓLAR"),
+        h("div", { style: { fontSize:10, color:"#2e3650", marginTop:1 } }, "Pizarra BCR Rosario · MEP/CCL · Decisión mensual")
+      )
+    ),
+    // Tabs
+    h("div", { style: { display:"flex", gap:6, marginBottom:16 } },
+      ...TABS.map((t,i) =>
+        h("button", { key:i, onClick: () => setTab(i),
+          style: { flex:1, padding:"8px 4px", borderRadius:8, border:`1px solid ${tab===i?"#3b5bdb":"#1e2130"}`, background:tab===i?"#1a2040":"#141722", color:tab===i?"#7a9fff":"#4a5568", fontSize:11, fontWeight:600, cursor:"pointer" } },
+          t
+        )
+      )
+    ),
+    tab === 0 ? tabDecision : tab === 1 ? tabSituacion : tabHistorial
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(h(App, null));
+</script>
+</body>
+</html>
