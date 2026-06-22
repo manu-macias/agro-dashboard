@@ -169,15 +169,15 @@ function NumInput({ label, value, onChange, unit, step }) {
 
 function App() {
   const [auth, setAuth] = useState(() => sessionStorage.getItem("auth") === "1");
-
-  if (!auth) return h(Login, { onSuccess: () => setAuth(true) });
-
   const [tab, setTab] = useState(0);
   const [v, setV] = useState(DEFAULTS);
   const [hist, setHist] = useState(() => {
     try { return JSON.parse(localStorage.getItem("soja_hist_v3") || "[]"); } catch { return []; }
   });
   const [hForm, setHForm] = useState({ mes:"", soja:"", dolar:"", decision:"soja" });
+  const [histSub, setHistSub] = useState(0);
+
+  if (!auth) return h(Login, { onSuccess: () => setAuth(true) });
 
   const set = (k) => (val) => setV(prev => ({ ...prev, [k]: val }));
 
@@ -311,7 +311,6 @@ function App() {
   );
 
   // TAB 2: Historial
-  const [histSub, setHistSub] = useState(0);
   const HIST_SUBS = ["📦 Ventas", "📈 Precios", "✏️ Registros"];
 
   const decisionColors = {
