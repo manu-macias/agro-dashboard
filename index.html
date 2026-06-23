@@ -224,6 +224,13 @@ function App() {
   });
   const [hForm, setHForm] = useState({ mes:"", soja:"", dolar:"", decision:"soja" });
 
+  useEffect(() => {
+    fetch("prices.json?t=" + Date.now())
+      .then(r => r.json())
+      .then(d => { if (d.soja) setV(prev => ({ ...prev, soja_hoy: d.soja })); })
+      .catch(() => {});
+  }, []);
+
   const set = (k) => (val) => setV(prev => ({ ...prev, [k]: val }));
   const saveHist = (arr) => { setHist(arr); try { localStorage.setItem("agro_demo_hist", JSON.stringify(arr)); } catch {} };
 
