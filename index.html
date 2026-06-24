@@ -277,12 +277,12 @@ function App() {
     h("div", { style: S.secLabel }, "Precios de hoy"),
     h("div", { style: S.grid2 },
       h(NumInput, { label:"🌾 Soja BCR Rosario", value:v.soja_hoy,  onChange:set("soja_hoy"),  unit:"$/tn · precio pizarra", step:1000 }),
-      h(NumInput, { label:"💵 Dólar MEP",         value:v.dolar_hoy, onChange:set("dolar_hoy"), unit:"$/USD",                 step:10   })
+      h(NumInput, { label:"💵 Dólar Oficial",         value:v.dolar_hoy, onChange:set("dolar_hoy"), unit:"$/USD · precio venta BCRA",                 step:10   })
     ),
     h("div", { style: S.secLabel }, "Promedios de referencia (últimos 3 meses)"),
     h("div", { style: S.grid2 },
       h(NumInput, { label:"Soja promedio",  value:v.soja_prom,  onChange:set("soja_prom"),  unit:"$/tn",  step:1000 }),
-      h(NumInput, { label:"Dólar promedio", value:v.dolar_prom, onChange:set("dolar_prom"), unit:"$/USD", step:10   })
+      h(NumInput, { label:"Dólar promedio", value:v.dolar_prom, onChange:set("dolar_prom"), unit:"$/USD · precio venta BCRA", step:10   })
     ),
     h("div", { style: { background:vc.bg, border:`1.5px solid ${vc.border}`, borderRadius:12, padding:"18px 16px", margin:"14px 0", textAlign:"center" } },
       h("div", { style: { fontSize:36, marginBottom:6 } }, verdict.emoji),
@@ -320,7 +320,7 @@ function App() {
     ),
     h("div", { style: { fontSize:10, color:"#2a3050", textAlign:"center", lineHeight:1.7 } },
       "Soja: ", h("a", { href:"https://www.cac.bcr.com.ar/es/precios-de-pizarra", target:"_blank", style: { color:"#3b5bdb" } }, "Cámara Arbitral BCR"),
-      " · Dólar: ", h("a", { href:"https://www.ambito.com/contenidos/dolar-mep.html", target:"_blank", style: { color:"#3b5bdb" } }, "Ámbito MEP")
+      " · Dólar: ", h("a", { href:"https://dolarhoy.com/cotizaciondolaroficial", target:"_blank", style: { color:"#3b5bdb" } }, "Dólar Oficial")
     )
   );
 
