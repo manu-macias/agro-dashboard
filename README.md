@@ -9,7 +9,8 @@ Herramienta de decisión para productores agropecuarios argentinos. Ayuda a dete
 ## Stack
 
 - **Frontend:** React 18 (sin bundler — `React.createElement` puro, sin JSX/Babel para compatibilidad con GitHub Pages CSP)
-- **Datos en producción:** Google Sheets privado → Google Apps Script Web App (API REST) → fetch desde el cliente
+- **Datos de precios:** archivo estático `data/precios.json` regenerado a diario por un script Node portable (ver abajo)
+- **Datos de ventas (producción):** Google Sheets privado → Google Apps Script Web App (API REST) → fetch desde el cliente
 - **Deploy:** GitHub Pages (sitio estático, cero infraestructura)
 - **Auth en producción:** pantalla de login con hash SHA-256 via Web Crypto API + sessionStorage
 
@@ -27,8 +28,25 @@ Herramienta de decisión para productores agropecuarios argentinos. Ayuda a dete
 
 ### 📅 Historial
 - **Ventas campaña:** tabla por socio con toneladas vendidas mes a mes, stock inicial y resto
-- **Precios históricos:** dólar blue + precio soja MAR 2025 → presente
+- **Precios:** gráfico de evolución **diaria** (SVG, sin dependencias) de dólar MEP y pizarra de soja, más tabla mensual derivada
 - **Registros manuales:** log de decisiones tomadas guardado en localStorage
+
+## Datos de precios (diarios)
+
+El gráfico y los precios "de hoy" salen de [`data/precios.json`](data/precios.json), un archivo estático que regenera [`scripts/update-data.mjs`](scripts/update-data.mjs):
+
+| Serie | Fuente | Detalle |
+|-------|--------|---------|
+| Dólar MEP $/USD | [ArgentinaDatos](https://argentinadatos.com) (`/cotizaciones/dolares/bolsa`) | Historia diaria completa, CORS libre |
+| Soja pizarra Rosario $/tn | [indicadores.ar](https://indicadores.ar) | Valor diario actual; la serie se densifica día a día |
+
+El script es **autónomo y portable** (Node 18+, sin dependencias). Lo corre un GitHub Action diario ([`.github/workflows/update-data.yml`](.github/workflows/update-data.yml)), pero también podés agendarlo con un cron en cualquier servidor:
+
+```bash
+node scripts/update-data.mjs   # actualiza data/precios.json
+```
+
+La página lo lee con ruta **relativa** (`fetch("./data/precios.json")`), así que funciona igual en GitHub Pages, Netlify, un VPS o abierta como archivo. Si el JSON no está disponible, cae a datos de demostración embebidos.
 
 ## Arquitectura de datos (producción)
 

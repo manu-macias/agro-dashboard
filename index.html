@@ -20,7 +20,7 @@
 <body>
 <div id="root"></div>
 <script>
-const { useState, createElement: h } = React;
+const { useState, useEffect, createElement: h } = React;
 
 const FMT = (n) => Number(n).toLocaleString("es-AR", { maximumFractionDigits: 0 });
 const PCT = (v) => (v >= 0 ? "+" : "") + (v * 100).toFixed(1) + "%";
@@ -67,6 +67,24 @@ const DEMO_DATA = {
   ],
 };
 
+const MES_ABBR = ["ENE","FEB","MAR","ABR","MAY","JUN","JUL","AGO","SEP","OCT","NOV","DIC"];
+// Reduce las series diarias a una tabla mensual {mes, dolar, soja} (último valor de cada mes).
+function buildMonthly(dolar = [], soja = []) {
+  const lastBy = (arr) => {
+    const m = {};
+    arr.forEach(p => { m[p.fecha.slice(0,7)] = p.valor; });
+    return m;
+  };
+  const dM = lastBy(dolar), sM = lastBy(soja);
+  const keys = [...new Set([...Object.keys(dM), ...Object.keys(sM)])].sort();
+  let lastD = null;
+  return keys.map(k => {
+    if (dM[k] != null) lastD = dM[k];
+    const [y, mo] = k.split("-");
+    return { mes: `${MES_ABBR[+mo-1]} ${y}`, dolar: dM[k] ?? lastD, soja: sM[k] ?? null };
+  }).filter(r => r.soja != null);
+}
+
 function calcScore(v) {
   const { soja_hoy, dolar_hoy, soja_prom, dolar_prom, stock_d, stock_s, urgencia, expect_s } = v;
   if (!soja_hoy || !dolar_hoy || !soja_prom || !dolar_prom) return { score:0, soja_rel:0, dolar_rel:0, razones:[] };
@@ -110,6 +128,68 @@ function NumInput({ label, value, onChange, unit, step }) {
   );
 }
 
+// Gráfico de líneas diarias (SVG, sin dependencias). Doble eje:
+// soja $/tn (verde, izq) y dólar $/USD (amarillo, der). Cada serie con su escala.
+function Chart({ dolar, soja }) {
+  const W = 700, H = 280, L = 8, R = 8, T = 16, B = 26;
+  const series = [dolar, soja].filter(s => s && s.length > 1);
+  if (series.length === 0) return h("div", { style: { fontSize:11, color:"#3a4460", textAlign:"center", padding:"40px 0" } }, "Cargando datos diarios…");
+
+  const ts = (f) => Date.parse(f);
+  const allDates = series.flat().map(p => ts(p.fecha));
+  const x0 = Math.min(...allDates), x1 = Math.max(...allDates);
+  const sx = (f) => L + ((ts(f) - x0) / (x1 - x0 || 1)) * (W - L - R);
+
+  const scaleY = (arr) => {
+    const vs = arr.map(p => p.valor);
+    let lo = Math.min(...vs), hi = Math.max(...vs);
+    const pad = (hi - lo) * 0.12 || hi * 0.1;
+    lo -= pad; hi += pad;
+    return (v) => T + (1 - (v - lo) / (hi - lo || 1)) * (H - T - B);
+  };
+  const path = (arr, sy) => arr.map((p, i) => (i ? "L" : "M") + sx(p.fecha).toFixed(1) + " " + sy(p.valor).toFixed(1)).join(" ");
+
+  const syS = soja && soja.length ? scaleY(soja) : null;
+  const syD = dolar && dolar.length ? scaleY(dolar) : null;
+
+  // ticks de tiempo: un rótulo por mes
+  const months = [];
+  { const seen = new Set();
+    series.flat().sort((a,b)=>ts(a.fecha)-ts(b.fecha)).forEach(p => {
+      const k = p.fecha.slice(0,7);
+      if (!seen.has(k)) { seen.add(k); months.push(p.fecha); }
+    }); }
+  const MM = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+  const lastS = soja && soja.length ? soja[soja.length-1] : null;
+  const lastD = dolar && dolar.length ? dolar[dolar.length-1] : null;
+
+  return h("div", null,
+    h("div", { style: { display:"flex", gap:14, justifyContent:"center", marginBottom:6, fontSize:10, fontWeight:700 } },
+      h("span", { style: { color:"#22c55e" } }, "● Soja $/tn"),
+      h("span", { style: { color:"#eab308" } }, "● Dólar MEP $/USD")
+    ),
+    h("svg", { viewBox:`0 0 ${W} ${H}`, style: { width:"100%", height:"auto", display:"block" }, preserveAspectRatio:"none" },
+      // grilla horizontal
+      ...[0.25,0.5,0.75].map((g,i) => h("line", { key:"g"+i, x1:L, x2:W-R, y1:T+g*(H-T-B), y2:T+g*(H-T-B), stroke:"#1a1e2e", strokeWidth:1 })),
+      // ticks de meses
+      ...months.map((f,i) => {
+        const d = new Date(f);
+        return h("text", { key:"m"+i, x:sx(f), y:H-8, fill:"#3a4460", fontSize:9, textAnchor:"middle" }, MM[d.getMonth()]);
+      }),
+      // líneas
+      syD ? h("path", { d:path(dolar, syD), fill:"none", stroke:"#eab308", strokeWidth:1.6, strokeLinejoin:"round", strokeLinecap:"round" }) : null,
+      syS ? h("path", { d:path(soja, syS), fill:"none", stroke:"#22c55e", strokeWidth:1.8, strokeLinejoin:"round", strokeLinecap:"round" }) : null,
+      // último punto + valor
+      lastD && syD ? h("circle", { cx:sx(lastD.fecha), cy:syD(lastD.valor), r:3, fill:"#eab308" }) : null,
+      lastS && syS ? h("circle", { cx:sx(lastS.fecha), cy:syS(lastS.valor), r:3, fill:"#22c55e" }) : null
+    ),
+    h("div", { style: { display:"flex", justifyContent:"space-between", marginTop:6, fontSize:10 } },
+      lastS ? h("span", { style: { color:"#22c55e", fontWeight:700 } }, "Soja $"+Number(lastS.valor).toLocaleString("es-AR")+"/tn") : h("span"),
+      lastD ? h("span", { style: { color:"#eab308", fontWeight:700 } }, "Dólar $"+Number(lastD.valor).toLocaleString("es-AR")) : h("span")
+    )
+  );
+}
+
 function App() {
   const [tab, setTab]         = useState(0);
   const [histSub, setHistSub] = useState(0);
@@ -118,6 +198,27 @@ function App() {
     try { return JSON.parse(localStorage.getItem("agro_demo_hist") || "[]"); } catch { return []; }
   });
   const [hForm, setHForm] = useState({ mes:"", soja:"", dolar:"", decision:"soja" });
+  const [live, setLive]   = useState(null);
+
+  // Carga la serie diaria generada por scripts/update-data.mjs (ruta relativa → portable).
+  useEffect(() => {
+    fetch("./data/precios.json", { cache: "no-store" })
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(d => {
+        setLive(d);
+        const lastS = d.soja && d.soja[d.soja.length-1];
+        const lastD = d.dolar && d.dolar[d.dolar.length-1];
+        // Autocompleta precios de hoy y promedios 3m con datos reales (una sola vez).
+        const avg = (arr) => arr.length ? Math.round(arr.reduce((a,b)=>a+b.valor,0)/arr.length) : 0;
+        setV(prev => ({ ...prev,
+          soja_hoy:  lastS ? lastS.valor : prev.soja_hoy,
+          dolar_hoy: lastD ? lastD.valor : prev.dolar_hoy,
+          soja_prom:  avg((d.soja||[]).slice(-90))  || prev.soja_prom,
+          dolar_prom: avg((d.dolar||[]).slice(-90)) || prev.dolar_prom,
+        }));
+      })
+      .catch(() => {}); // si no hay archivo (ej. abierto como file://) usa los defaults
+  }, []);
 
   const set = (k) => (val) => setV(prev => ({ ...prev, [k]: val }));
   const saveHist = (arr) => { setHist(arr); try { localStorage.setItem("agro_demo_hist", JSON.stringify(arr)); } catch {} };
@@ -144,7 +245,8 @@ function App() {
 
   const ventas    = DEMO_DATA.ventas.filter(r => r.nombre !== "TOTAL");
   const totalRow  = DEMO_DATA.ventas.find(r => r.nombre === "TOTAL");
-  const precios   = DEMO_DATA.precios;
+  const liveMonthly = live ? buildMonthly(live.dolar, live.soja) : [];
+  const precios   = liveMonthly.length ? liveMonthly : DEMO_DATA.precios;
   const precioAct = precios[precios.length-1].soja;
   const mesAct    = precios[precios.length-1].mes;
   const totVend   = totalRow.ventas.reduce((a,b) => a+b, 0);
@@ -280,11 +382,21 @@ function App() {
     )
   );
 
+  const updatedTxt = live && live.updated
+    ? "Actualizado " + new Date(live.updated).toLocaleDateString("es-AR", { day:"2-digit", month:"short", year:"numeric" })
+    : "Datos de demostración (sin conexión a data/precios.json)";
   const subPrecios = h("div", null,
+    h("div", { style: { ...S.card, marginBottom:12 } },
+      h("div", { style: { display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:10 } },
+        h("div", { style: { fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.08em", color:"#3a4460" } }, "📈 Evolución diaria"),
+        h("div", { style: { fontSize:9, color:"#2e3650" } }, updatedTxt)
+      ),
+      h(Chart, { dolar: live ? live.dolar : null, soja: live ? live.soja : null })
+    ),
     h("div", { style: { overflowX:"auto" } },
       h("table", { style: { width:"100%", borderCollapse:"collapse" } },
         h("thead", null, h("tr", null,
-          ...["Mes","Dólar Blue","Soja $/tn"].map((lbl,i) =>
+          ...["Mes","Dólar MEP","Soja $/tn"].map((lbl,i) =>
             h("th", { key:i, style: { ...thS, textAlign: i===0?"left":"right" } }, lbl)
           )
         )),
@@ -382,7 +494,7 @@ function App() {
         h("span", { style: { fontSize:28 } }, "🌾"),
         h("div", null,
           h("div", { style: { fontSize:15, fontWeight:800, color:"#e8edf5", letterSpacing:"-0.01em" } }, "AGRO DASHBOARD"),
-          h("div", { style: { fontSize:10, color:"#2e3650", marginTop:1 } }, "Soja vs Dólar · Decisión mensual")
+          h("div", { style: { fontSize:10, color:"#2e3650", marginTop:1 } }, "Soja vs Dólar · Datos diarios")
         )
       ),
       h("span", { style: { fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.08em", color:"#3b5bdb", background:"#0e1225", border:"1px solid #1e2a50", borderRadius:5, padding:"3px 7px" } }, "DEMO")
