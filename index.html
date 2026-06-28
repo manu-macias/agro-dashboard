@@ -63,8 +63,8 @@ const DEFAULTS = {
 
 const TABS = [
   { icon:"target-arrow",          label:"Decisión" },
-  { icon:"adjustments-horizontal", label:"Mi situación" },
   { icon:"calendar-stats",        label:"Historial" },
+  { icon:"adjustments-horizontal", label:"Mi situación" },
 ];
 const MESES_CAMP = ["JUN","JUL","AGO","SEP","OCT","NOV","DIC","ENE","FEB","MAR","ABR","MAY"];
 
@@ -247,6 +247,7 @@ function App() {
   });
   const [hForm, setHForm] = useState({ mes:"", soja:"", dolar:"", decision:"soja" });
   const [priceHist, setPriceHist] = useState([]);
+  const [priceDate, setPriceDate] = useState("");
 
   useEffect(() => {
     fetch("prices.json?t=" + Date.now())
@@ -258,6 +259,7 @@ function App() {
           ...(d.dolar ? { dolar_hoy: d.dolar } : {}),
         }));
         if (Array.isArray(d.history)) setPriceHist(d.history);
+        if (d.fecha) setPriceDate(d.fecha);
       })
       .catch(() => {});
   }, []);
@@ -290,6 +292,24 @@ function App() {
   const precioAct = precios[precios.length-1].soja;
   const mesAct    = precios[precios.length-1].mes;
   const totVend   = totalRow.ventas.reduce((a,b) => a+b, 0);
+
+  // Facturación exacta: cada mes vendido se valúa al precio de soja de ESE mes
+  // (no al precio actual). En producción el precio se captura al registrar la venta.
+  const precioPorMes = {};
+  precios.forEach(p => { precioPorMes[p.mes] = p.soja; });
+  const factPorMes = {};
+  ventas.forEach(r => r.ventas.forEach((tn, mi) => {
+    if (!(tn > 0)) return;
+    const mes   = MESES_CAMP[mi];
+    const year  = 2026 + (mi >= 7 ? 1 : 0);            // ENE..MAY → 2027
+    const precio = precioPorMes[mes + " " + year] || precioAct;
+    factPorMes[mes] = (factPorMes[mes] || 0) + tn * precio;
+  }));
+  const factTotal = Object.values(factPorMes).reduce((a,b) => a+b, 0);
+  let factUltimo = null;
+  for (let mi = MESES_CAMP.length - 1; mi >= 0; mi--) {
+    if (factPorMes[MESES_CAMP[mi]]) { factUltimo = { mes:MESES_CAMP[mi], importe:factPorMes[MESES_CAMP[mi]] }; break; }
+  }
 
   const DC = {
     soja:    { fg:T.soja,  lbl:"Soja" },
@@ -357,6 +377,8 @@ function App() {
   );
 
   const tabSituacion = h("div", null,
+    h("div", { style:{ display:"flex", alignItems:"center", gap:7, fontSize:12.5, color:T.text3, background:T.surface, border:`1px solid ${T.border}`, borderRadius:T.rs || 10, padding:"9px 12px", marginBottom:14 } },
+      ic("flask", 15, T.score), h("span", null, "Datos de demostración — esta sección usa valores de ejemplo.")),
     h(SecLabel, null, "Mi stock disponible"),
     h("div", { style: S.grid2 },
       h(Slider, { label:"Stock de dólares", value:v.stock_d, onChange:set("stock_d"), hint:"1 = pocos · 5 = de sobra" }),
@@ -396,7 +418,7 @@ function App() {
 
   const subVentas = h("div", null,
     h("div", { style:{ fontSize:11.5, color:T.text3, marginBottom:11, lineHeight:1.6 } },
-      "Campaña 2026-2027 · Precio actual $"+FMT(precioAct)+"/tn · ",
+      "Campaña 2026-2027 · Precio actual $"+FMT(v.soja_hoy || precioAct)+"/tn"+(priceDate ? " · Actualizado "+new Date(priceDate+"T00:00:00").toLocaleDateString("es-AR") : "")+" · ",
       h("span", { style:{ color:T.score } }, "Demo — en producción conectado a Google Sheets en vivo")
     ),
     h("div", { style:{ overflowX:"auto" } },
@@ -425,7 +447,8 @@ function App() {
     ),
     h("div", { style:{ marginTop:12, padding:"11px 13px", background:T.sojaBg, border:`1px solid ${T.sojaBorder}`, borderRadius:T.rs, fontSize:12, color:T.text2 } },
       "Total vendido: ", h("span", { style:{ color:T.soja, fontWeight:700 } }, totVend+" tn"),
-      "  ·  Facturación: ", h("span", { style:{ color:T.soja, fontWeight:700 } }, "$"+FMT(totVend*precioAct)),
+      "  ·  Facturado total: ", h("span", { style:{ color:T.soja, fontWeight:700 } }, "$"+FMT(factTotal)),
+      factUltimo ? [ "  ·  Último mes ("+factUltimo.mes+"): ", h("span", { style:{ color:T.soja, fontWeight:700 } }, "$"+FMT(factUltimo.importe)) ] : null,
       "  ·  Resto: ", h("span", { style:{ color:T.score, fontWeight:700 } }, totalRow.resto+" tn")
     )
   );
@@ -514,7 +537,7 @@ function App() {
         )
   );
 
-  const HIST_SUBS = [ { icon:"box", label:"Ventas" }, { icon:"chart-line", label:"Precios" }, { icon:"pencil", label:"Registros" } ];
+  const HIST_SUBS = [ { icon:"box", label:"Ventas" }, { icon:"chart-line", label:"Precios" } ];
   const tabHistorial = h("div", null,
     h("div", { style:{ display:"flex", gap:5, background:T.segBg, border:`1px solid ${T.border}`, borderRadius:11, padding:4, marginBottom:14 } },
       ...HIST_SUBS.map((t,i) =>
@@ -524,7 +547,7 @@ function App() {
         )
       )
     ),
-    histSub===0 ? subVentas : histSub===1 ? subPrecios : subRegistros
+    histSub===0 ? subVentas : subPrecios
   );
 
   return h("div", { style: S.page },
@@ -546,7 +569,7 @@ function App() {
         )
       )
     ),
-    tab===0 ? tabDecision : tab===1 ? tabSituacion : tabHistorial
+    tab===0 ? tabDecision : tab===1 ? tabHistorial : tabSituacion
   );
 }
 
